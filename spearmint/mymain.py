@@ -11,7 +11,6 @@ except ImportError: import json
 
 from collections import OrderedDict
 
-from spearmint.utils.database.mongodb import MongoDB
 from spearmint.tasks.task_group       import TaskGroup
 
 from spearmint.resources.resource import parse_resources_from_config
@@ -47,13 +46,6 @@ def get_options():
     if 'tasks' not in options:
         options['tasks'] = {'main' : {'type' : 'OBJECTIVE', 'likelihood' : options.get('likelihood', 'GAUSSIAN')}}
 
-    # Set DB address
-    db_address = parse_db_address(options)
-    if 'database' not in options:
-        options['database'] = {'name': 'spearmint', 'address': db_address}
-    else:
-        options['database']['address'] = db_address
-
     if not os.path.exists(expt_dir):
         sys.stderr.write("Cannot find experiment directory '%s'. "
                          "Aborting.\n" % (expt_dir))
@@ -71,15 +63,10 @@ def main():
     chooser = chooser_module.init(options)
     experiment_name     = options.get("experiment-name", 'unnamed-experiment')
 
-    # Connect to the database
-    db_address = options['database']['address']
-    sys.stderr.write('Using database at %s.\n' % db_address)        
-    db         = MongoDB(database_address=db_address)
-
     # Get a suggestion for the next job
     task_names = ['main']
     resource_name = ''
-    suggested_input = get_suggestion(chooser, task_names, db, expt_dir, options, resource_name)
+    suggested_input = get_suggestion(chooser, task_names, options)
     print 'suggested_input:'
     print suggested_input
     print
@@ -87,7 +74,7 @@ def main():
 
 # TODO: support decoupling i.e. task_names containing more than one task,
 #       and the chooser must choose between them in addition to choosing X
-def get_suggestion(chooser, task_names, db, expt_dir, options, resource_name):
+def get_suggestion(chooser, task_names, options):
 
     if len(task_names) == 0:
         raise Exception("Error: trying to obtain suggestion for 0 tasks ")
@@ -100,39 +87,24 @@ def get_suggestion(chooser, task_names, db, expt_dir, options, resource_name):
     # task_options = options["tasks"]
 
     task_options = {'main': options['tasks']['main']}
-    print 'task_options:'
-    print task_options
-    print
 
 
     task_group = TaskGroup(task_options, options['variables'])
 
     # Load the tasks from the database -- only those in task_names!
     task_group = load_task_group(task_group, options)
-    print 'task_group:'
-    print task_group
-    print
 
     # Load the model hypers from the database.
     hypers = load_hypers()
-    print 'hypers1:'
-    print hypers
-    print
 
     # "Fit" the chooser - give the chooser data and let it fit the model.
     hypers = chooser.fit(task_group, hypers, task_options)
-    print 'hypers2:'
-    print hypers
-    print
 
     # Save the hyperparameters to the database.
     save_hypers(hypers)
 
     # Ask the chooser to actually pick one.
     suggested_input = chooser.suggest()
-    print 'suggested_input:'
-    print suggested_input
-    print
 
     jobs = load_jobs(task_group)
 
@@ -144,7 +116,7 @@ def get_suggestion(chooser, task_names, db, expt_dir, options, resource_name):
     }
 
     jobs.append(job)
-    save_jobs(jobs)
+    save_jobs(task_group, jobs)
 
     return suggested_input
 
@@ -169,8 +141,11 @@ def load_hypers():
 
 def load_jobs(task_group):
     jobs = []
-    # try:
-    fd = open('/users/hengganc/jobs.json', 'r')
+    try:
+      fd = open('/users/hengganc/jobs.json', 'r')
+    except:
+      print 'No jobs!'
+      return []
     for line in fd:
       strs = line.split()
       if len(strs) < 2:
@@ -187,14 +162,8 @@ def load_jobs(task_group):
         job['value'] = float(strs[0])
       jobs.append(job)
     return jobs
-    # except:
-      # print 'No jobs!'
-      # return []
 
-def save_jobs(jobs):
-    print 'jobs:'
-    print jobs
-    print
+def save_jobs(task_group, jobs):
     fd = open('/users/hengganc/jobs.json', 'w')
     for job in jobs:
       line = ''
@@ -202,11 +171,9 @@ def save_jobs(jobs):
         line = line + 'P P'
       else:
         line = line + ' ' + str(job['value']) + ' 1'
-      params = job['params']
-      for name, param in params.iteritems():
-        values = param['values']
-        for value in values:
-          line = line + ' ' + str(value)
+      inputs = task_group.vectorify(job['params'])
+      for input in inputs:
+        line = line + ' ' + str(input)
       fd.write(line)
       fd.write('\n')
 
