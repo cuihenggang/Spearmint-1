@@ -170,7 +170,7 @@ def save_jobs(task_group, jobs):
       if job['status'] == 'pending':
         line = line + 'P P'
       else:
-        line = line + ' ' + str(job['value']) + ' 1'
+        line = line + str(job['value']) + ' 1'
       inputs = task_group.vectorify(job['params'])
       for input in inputs:
         line = line + ' ' + str(input)
