@@ -39,6 +39,7 @@ def get_options():
     except:
         raise Exception("config.json did not load properly. Perhaps a spurious comma?")
     options["config"]  = commandline_kwargs.config_file
+    options["expt_dir"] = expt_dir
 
 
     # Set sensible defaults for options
@@ -95,18 +96,23 @@ def get_suggestion(chooser, task_names, options):
     task_group = load_task_group(task_group, options)
 
     # Load the model hypers from the database.
-    hypers = load_hypers()
+    hypers = load_hypers(options)
 
     # "Fit" the chooser - give the chooser data and let it fit the model.
     hypers = chooser.fit(task_group, hypers, task_options)
 
     # Save the hyperparameters to the database.
-    save_hypers(hypers)
+    save_hypers(options, hypers)
 
     # Ask the chooser to actually pick one.
     suggested_input = chooser.suggest()
+    try:
+      suggested_input_len = len(suggested_input)
+    except:
+      suggested_input = [suggested_input]
+    suggested_input = np.array(suggested_input)
 
-    jobs = load_jobs(task_group)
+    jobs = load_jobs(task_group, options)
 
     job_id = len(jobs) + 1
 
@@ -116,21 +122,23 @@ def get_suggestion(chooser, task_names, options):
     }
 
     jobs.append(job)
-    save_jobs(task_group, jobs)
+    save_jobs(task_group, options, jobs)
 
     return suggested_input
 
-def save_hypers(hypers):
+def save_hypers(options, hypers):
+    hyper_file = os.path.join(options['expt_dir'], 'hypers.json')
     if hypers:
-      fd = open('/users/hengganc/hypers.json', 'w')
+      fd = open(hyper_file, 'w')
       hypers['main']['hypers']['beta_alpha'] = hypers['main']['hypers']['beta_alpha'].tolist()
       hypers['main']['hypers']['ls'] = hypers['main']['hypers']['ls'].tolist()
       hypers['main']['hypers']['beta_beta'] = hypers['main']['hypers']['beta_beta'].tolist()
       json.dump(hypers, fd)
 
-def load_hypers():
+def load_hypers(options):
+    hyper_file = os.path.join(options['expt_dir'], 'hypers.json')
     try:
-      fd = open('/users/hengganc/hypers.json', 'r')
+      fd = open(hyper_file, 'r')
       hypers = json.load(fd)
       hypers['main']['hypers']['beta_alpha'] = np.array(hypers['main']['hypers']['beta_alpha'])
       hypers['main']['hypers']['ls'] = np.array(hypers['main']['hypers']['ls'])
@@ -139,10 +147,11 @@ def load_hypers():
     except:
       return {}
 
-def load_jobs(task_group):
+def load_jobs(task_group, options):
+    results_file = os.path.join(options['expt_dir'], 'results.dat')
     jobs = []
     try:
-      fd = open('/users/hengganc/jobs.json', 'r')
+      fd = open(results_file, 'r')
     except:
       print 'No jobs!'
       return []
@@ -163,8 +172,9 @@ def load_jobs(task_group):
       jobs.append(job)
     return jobs
 
-def save_jobs(task_group, jobs):
-    fd = open('/users/hengganc/jobs.json', 'w')
+def save_jobs(task_group, options, jobs):
+    results_file = os.path.join(options['expt_dir'], 'results.dat')
+    fd = open(results_file, 'w')
     for job in jobs:
       line = ''
       if job['status'] == 'pending':
@@ -178,7 +188,7 @@ def save_jobs(task_group, jobs):
       fd.write('\n')
 
 def load_task_group(task_group, options):
-    jobs = load_jobs(task_group)
+    jobs = load_jobs(task_group, options)
 
     if jobs:
         task_group.inputs  = np.array([task_group.vectorify(job['params'])
