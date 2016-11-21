@@ -1,6 +1,6 @@
 {
     "language"        : "PYTHON",
-    "experiment-name" : "cifar",
+    "experiment-name" : "mf",
     "variables" : {
         "x" : {
             "type" : "FLOAT",
@@ -13,12 +13,6 @@
             "size" : 1,
             "min"  : 0,
             "max"  : 3
-        },
-        "z" : {
-            "type" : "INT",
-            "size" : 1,
-            "min"  : 1,
-            "max"  : 7
         }
     }
 }
